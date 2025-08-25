@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Acesso Negado</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <h1>🚫 Acesso Negado</h1>
+    <p>Você não tem permissão para acessar esta página.</p>
+    {% if permissoes %}
+    <p>Somente os seguintes tipos de usuários podem acessar: {{ permissoes|join(', ') }}</p>
+    {% endif %}
+    <a href="{{ url_for('home') }}">Voltar para o início</a>
+</body>
+
+</html>

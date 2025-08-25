@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card shadow">
+    <div class="card-body">
+        <h4 class="mb-3">Cadastrar Livro</h4>
+        <form id="formLivro">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Título</label>
+                    <input id="titulo" class="form-control" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Autor</label>
+                    <input id="autor" class="form-control" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Ano</label>
+                    <input id="ano" type="number" class="form-control">
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-success">Salvar</button>
+                <a class="btn btn-secondary" href="/livros/listar">Voltar</a>
+            </div>
+        </form>
+        <div id="msg" class="mt-3"></div>
+    </div>
+</div>
+
+<script>
+    document.getElementById("formLivro").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const payload = {
+            titulo: document.getElementById("titulo").value.trim(),
+            autor: document.getElementById("autor").value.trim(),
+            ano: document.getElementById("ano").value ? parseInt(document.getElementById("ano").value) : null
+        };
+
+        const resp = await fetch("/livros", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+        const msg = document.getElementById("msg");
+        if (resp.ok) {
+            msg.innerHTML = `<div class="alert alert-success">${data.msg}</div>`;
+            document.getElementById("formLivro").reset();
+        } else {
+            msg.innerHTML = `<div class="alert alert-danger">${data.msg || "Erro ao cadastrar"}</div>`;
+        }
+    });
+</script>
+{% endblock %}

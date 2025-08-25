@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h4 class="mb-3">📚 Meus Empréstimos</h4>
+
+<div id="msg"></div>
+
+<div class="table-responsive">
+    <table class="table table-striped align-middle" id="tblEmprestimos">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Livro</th>
+                <th>Data Retirada</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+    // Carrega os empréstimos do usuário logado
+    async function carregarEmprestimos() {
+        const u = await (await fetch("/usuarios_sessao")).json();
+        if (!u || !u.id_usuario) {
+            document.getElementById("msg").innerHTML = `<div class="alert alert-warning">Faça login novamente.</div>`;
+            return;
+        }
+
+        const resp = await fetch("/emprestimos");
+        const todos = await resp.json();
+
+        // Filtra só os empréstimos do usuário logado
+        const meus = todos.filter(e => e.usuario === u.nome);
+
+        const tbody = document.querySelector("#tblEmprestimos tbody");
+        tbody.innerHTML = "";
+        meus.forEach(e => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+      <td>${e.id_emprestimo}</td>
+      <td>${e.livro}</td>
+      <td>${e.data_retirada}</td>
+      <td>${e.status}</td>
+      <td>
+        <button class="btn btn-sm btn-warning" ${e.status === "devolvido" ? "disabled" : ""} onclick="devolver(${e.id_emprestimo})">
+          Devolver
+        </button>
+      </td>
+    `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Função para devolver livro
+    async function devolver(id) {
+        const resp = await fetch(`/devolver/${id}`, { method: "PUT" });
+        const data = await resp.json();
+        document.getElementById("msg").innerHTML = `<div class="alert alert-${resp.ok ? "success" : "danger"}">${data.msg}</div>`;
+        carregarEmprestimos();
+    }
+
+    carregarEmprestimos();
+</script>
+{% endblock %}
+

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<h4 class="mb-3">🏆 Ranking de Leitura - TOP 10</h4>
+<div class="table-responsive mb-4">
+    <table class="table table-hover" id="tblRanking">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Aluno</th>
+                <th>Pontos</th>
+                <th>Nível</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<h5>👤 Meu Ranking</h5>
+<div id="meuRanking" class="alert alert-info">Carregando...</div>
+
+<script>
+    async function carregarRanking() {
+        // Carregar TOP 10
+        const resp = await fetch("/ranking");
+        const ranking = await resp.json();
+        const tbody = document.querySelector("#tblRanking tbody");
+        tbody.innerHTML = "";
+        ranking.forEach((r, idx) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+      <td>${idx + 1}</td>
+      <td>${r.nome}</td>
+      <td>${r.pontos}</td>
+      <td>${r.nivel}</td>
+    `;
+            tbody.appendChild(tr);
+        });
+
+        // Carregar "Meu Ranking"
+        const respMeu = await fetch("/meu_ranking");
+        const divMeu = document.getElementById("meuRanking");
+        if (respMeu.ok) {
+            const me = await respMeu.json();
+            divMeu.innerHTML = `
+      <strong>Posição:</strong> ${me.posicao}º <br>
+      <strong>Nome:</strong> ${me.nome} <br>
+      <strong>Pontos:</strong> ${me.pontos} <br>
+      <strong>Nível:</strong> ${me.nivel}
+    `;
+        } else {
+            divMeu.innerHTML = `<span class="text-danger">Usuário não encontrado no ranking.</span>`;
+        }
+    }
+
+    carregarRanking();
+</script>
+{% endblock %}
