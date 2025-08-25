@@ -17,12 +17,35 @@
             </button>
             <div id="nv" class="collapse navbar-collapse">
                 <ul class="navbar-nav me-auto">
-                    <li class="nav-item"><a class="nav-link" href="/ranking/page">Ranking</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/meus-emprestimos">Meus Empréstimos</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/livros/listar">Livros</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/livros/cadastrar">Cadastrar Livro</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/usuarios/cadastrar">Cadastrar Usuário</a></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ranking/page">Ranking</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if session.get('user_tipo') not in ['aluno', 'professor'] %}disabled{% endif %}"
+                            href="{% if session.get('user_tipo') in ['aluno', 'professor'] %}/meus-emprestimos{% else %}#{% endif %}">
+                            Meus Empréstimos
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if session.get('user_tipo') not in ['aluno', 'professor'] %}disabled{% endif %}"
+                            href="{% if session.get('user_tipo') in ['aluno', 'professor'] %}/livros/listar{% else %}#{% endif %}">
+                            Livros
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if session.get('user_tipo') != 'professor' %}disabled{% endif %}"
+                            href="{% if session.get('user_tipo') == 'professor' %}/livros/cadastrar{% else %}#{% endif %}">
+                            Cadastrar Livro
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if session.get('user_tipo') != 'professor' %}disabled{% endif %}"
+                            href="{% if session.get('user_tipo') == 'professor' %}/usuarios/cadastrar{% else %}#{% endif %}">
+                            Cadastrar Usuário
+                        </a>
+                    </li>
                 </ul>
+
                 <span class="navbar-text text-white me-3">
                     {% if session.get('user_nome') and session.get('user_tipo') %}
                         {{ session['user_nome'] }} ({{ session['user_tipo']|upper }})

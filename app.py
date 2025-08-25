@@ -300,7 +300,7 @@ def login_page():
             session["user_id"] = user["id_usuario"]
             session["user_nome"] = user["nome"]
             session["user_tipo"] = user["tipo"]
-            return redirect(url_for("listar_livros_page"))
+            return redirect(url_for("ranking_page"))
         else:
             return render_template("login.html", erro="Credenciais inválidas")
 
@@ -325,6 +325,7 @@ def cadastrar_livros_page():
 
 
 @app.route("/livros/listar", methods=["GET"])
+@requires_tipo("aluno", "professor")  # só ALUNO e PROFESSOR
 def listar_livros_page():
     if "user_id" not in session:
         return redirect(url_for("login_page"))
