@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h4 class="mb-3">📚 Meus Empréstimos</h4>
+<h4 class="mb-3">📚 {% if session.get('user_tipo') == 'professor' %}Todos os Empréstimos{% else %}Meus Empréstimos{%
+    endif %}</h4>
 
 <div id="msg"></div>
 
@@ -9,6 +10,9 @@
         <thead>
             <tr>
                 <th>ID</th>
+                {% if session.get('user_tipo') == 'professor' %}
+                <th>Aluno</th>
+                {% endif %}
                 <th>Livro</th>
                 <th>Data Retirada</th>
                 <th>Status</th>
@@ -19,49 +23,183 @@
     </table>
 </div>
 
+<!-- Modal para confirmação de devolução -->
+<div class="modal fade" id="modalDevolucao" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar Devolução</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Tem certeza que deseja registrar a devolução deste livro?</p>
+                <p><strong>Livro:</strong> <span id="modalLivroNome"></span></p>
+                <p><strong>Aluno:</strong> <span id="modalAlunoNome"></span></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnConfirmarDevolucao">Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-    // Carrega os empréstimos do usuário logado
+    // Variável global para armazenar o empréstimo a ser devolvido
+    let emprestimoParaDevolver = null;
+
+    // Carrega os empréstimos
     async function carregarEmprestimos() {
-        const u = await (await fetch("/usuarios_sessao")).json();
-        if (!u || !u.id_usuario) {
-            document.getElementById("msg").innerHTML = `<div class="alert alert-warning">Faça login novamente.</div>`;
-            return;
+        try {
+            const u = await (await fetch("/usuarios_sessao")).json();
+            if (!u || !u.id_usuario) {
+                document.getElementById("msg").innerHTML = `<div class="alert alert-warning">Faça login novamente.</div>`;
+                return;
+            }
+
+            console.log("Usuário logado:", u);
+
+            // Para professores, carregar todos os empréstimos
+            // Para alunos, carregar apenas seus próprios empréstimos
+            const url = u.tipo === 'professor' ? "/emprestimos" : "/meus_emprestimos_api";
+            console.log("Carregando empréstimos de:", url);
+
+            const resp = await fetch(url);
+
+            if (!resp.ok) {
+                throw new Error('Erro ao carregar empréstimos: ' + resp.status);
+            }
+
+            const todos = await resp.json();
+            console.log("Dados recebidos:", todos);
+
+            const tbody = document.querySelector("#tblEmprestimos tbody");
+            tbody.innerHTML = "";
+
+            // Converter ID do usuário da sessão para número (para comparação correta)
+            const usuarioId = parseInt(u.id_usuario);
+
+            // Para alunos, usar diretamente os dados da API específica
+            // Para professores, mostrar todos os empréstimos
+            const emprestimosExibir = u.tipo === 'professor' ? todos : todos;
+
+            if (emprestimosExibir.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="${u.tipo === 'professor' ? 6 : 5}" class="text-center py-4">
+                            Nenhum empréstimo encontrado
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            emprestimosExibir.forEach(e => {
+                const tr = document.createElement("tr");
+
+                // Verificar se o usuário atual tem permissão para devolver
+                // Para alunos, a API já retorna apenas seus empréstimos, então sempre pode devolver
+                // Para professores, pode devolver qualquer empréstimo
+                const usuarioPodeDevolver = u.tipo === 'professor' || parseInt(e.id_usuario) === usuarioId;
+                const estaDevolvido = e.status === 'devolvido';
+
+                tr.innerHTML = `
+                    <td>${e.id_emprestimo}</td>
+                    ${u.tipo === 'professor' ? `<td>${e.usuario}</td>` : ''}
+                    <td>${e.livro}</td>
+                    <td>${new Date(e.data_retirada).toLocaleDateString('pt-BR')}</td>
+                    <td>
+                        <span class="badge ${estaDevolvido ? 'bg-success' : 'bg-warning'}">
+                            ${estaDevolvido ? 'Devolvido' : 'Ativo'}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-warning" 
+                            ${estaDevolvido || !usuarioPodeDevolver ? 'disabled' : ''} 
+                            onclick="prepararDevolucao(${e.id_emprestimo}, '${e.livro.replace(/'/g, "\\'")}', '${e.usuario.replace(/'/g, "\\'")}')">
+                            Devolver
+                        </button>
+                        ${!usuarioPodeDevolver ? '<small class="text-muted d-block">Não autorizado</small>' : ''}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+        } catch (error) {
+            console.error("Erro:", error);
+            document.getElementById("msg").innerHTML = `
+                <div class="alert alert-danger">Erro ao carregar empréstimos: ${error.message}</div>
+            `;
         }
-
-        const resp = await fetch("/emprestimos");
-        const todos = await resp.json();
-
-        // Filtra só os empréstimos do usuário logado
-        const meus = todos.filter(e => e.usuario === u.nome);
-
-        const tbody = document.querySelector("#tblEmprestimos tbody");
-        tbody.innerHTML = "";
-        meus.forEach(e => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-      <td>${e.id_emprestimo}</td>
-      <td>${e.livro}</td>
-      <td>${e.data_retirada}</td>
-      <td>${e.status}</td>
-      <td>
-        <button class="btn btn-sm btn-warning" ${e.status === "devolvido" ? "disabled" : ""} onclick="devolver(${e.id_emprestimo})">
-          Devolver
-        </button>
-      </td>
-    `;
-            tbody.appendChild(tr);
-        });
     }
 
-    // Função para devolver livro
-    async function devolver(id) {
-        const resp = await fetch(`/devolver/${id}`, { method: "PUT" });
-        const data = await resp.json();
-        document.getElementById("msg").innerHTML = `<div class="alert alert-${resp.ok ? "success" : "danger"}">${data.msg}</div>`;
-        carregarEmprestimos();
+    // Preparar devolução (abrir modal de confirmação)
+    function prepararDevolucao(idEmprestimo, livroNome, alunoNome) {
+        emprestimoParaDevolver = idEmprestimo;
+        document.getElementById('modalLivroNome').textContent = livroNome;
+        document.getElementById('modalAlunoNome').textContent = alunoNome;
+
+        const modal = new bootstrap.Modal(document.getElementById('modalDevolucao'));
+        modal.show();
     }
 
-    carregarEmprestimos();
+    // Confirmar devolução
+    document.getElementById('btnConfirmarDevolucao').addEventListener('click', async function () {
+        if (!emprestimoParaDevolver) return;
+
+        try {
+            // Mostrar loading
+            const btn = this;
+            const originalText = btn.textContent;
+            btn.textContent = 'Processando...';
+            btn.disabled = true;
+
+            const resp = await fetch(`/devolver/${emprestimoParaDevolver}`, {
+                method: "PUT"
+            });
+
+            const data = await resp.json();
+
+            if (resp.ok) {
+                document.getElementById("msg").innerHTML = `
+                    <div class="alert alert-success">${data.msg}</div>
+                `;
+
+                // Fechar modal e recarregar dados
+                bootstrap.Modal.getInstance(document.getElementById('modalDevolucao')).hide();
+                await carregarEmprestimos();
+
+            } else {
+                document.getElementById("msg").innerHTML = `
+                    <div class="alert alert-danger">${data.msg}</div>
+                `;
+            }
+
+        } catch (error) {
+            console.error("Erro ao devolver:", error);
+            document.getElementById("msg").innerHTML = `
+                <div class="alert alert-danger">Erro ao registrar devolução.</div>
+            `;
+        } finally {
+            // Restaurar botão
+            const btn = document.getElementById('btnConfirmarDevolucao');
+            btn.textContent = 'Confirmar';
+            btn.disabled = false;
+        }
+    });
+
+    // Carregar empréstimos quando a página for carregada
+    document.addEventListener('DOMContentLoaded', carregarEmprestimos);
 </script>
-{% endblock %}
 
+<style>
+    .badge {
+        font-size: 0.85em;
+        padding: 0.35em 0.65em;
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: rgba(0, 0, 0, 0.03);
+    }
+</style>
+{% endblock %}

@@ -6,23 +6,9 @@ from flask import abort
 from datetime import datetime, timedelta
 import json
 
-
 app = Flask(__name__, template_folder="templates", static_folder="static")
-
-# 🔑 DEFINIR A SECRET KEY
-# Pode ser uma chave fixa:
-# app.secret_key = "minha_chave_super_secreta_123"
-
-# ou pode ser gerada aleatória a cada execução (não mantém sessão após restart):
 app.secret_key = os.urandom(24)
-
 DATABASE = "apple.db"
-
-'''
-    Para rodar, abrir o terminal e inserir: python app.py
-    no navegador ficará disponível para receber novas requisições
-
-'''
 
 # Decorador para checar permissões
 def requires_tipo(*tipos):
@@ -36,7 +22,6 @@ def requires_tipo(*tipos):
             return f(*args, **kwargs)
         return decorated_function
     return wrapper
-
 
 # --- Função para conectar ao banco ---
 def get_db():
@@ -99,10 +84,6 @@ def init_db():
 #           ENDPOINTS
 # -------------------------------
 
-# @app.route("/")
-# def home():
-#     return "🚀 AppLê funcionando com Flask + SQLite!"
-
 # --- Usuários ---
 @app.route("/usuarios", methods=["POST"])
 def add_usuario():
@@ -116,10 +97,19 @@ def add_usuario():
 
 @app.route("/usuarios", methods=["GET"])
 def get_usuarios():
+    tipo = request.args.get('tipo')
+    
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id_usuario, nome, email, tipo FROM usuarios")
+    
+    if tipo:
+        cursor.execute("SELECT id_usuario, nome, email, tipo FROM usuarios WHERE tipo = ?", (tipo,))
+    else:
+        cursor.execute("SELECT id_usuario, nome, email, tipo FROM usuarios")
+        
     usuarios = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
     return jsonify(usuarios)
 
 # --- Livros ---
@@ -162,15 +152,33 @@ def add_emprestimo():
     conn.commit()
     return jsonify({"msg": "Empréstimo registrado com sucesso!"})
 
+# @app.route("/emprestimos", methods=["GET"])
+# def get_emprestimos():
+#     conn = get_db()
+#     cursor = conn.cursor()
+#     cursor.execute("""
+#         SELECT e.id_emprestimo, e.id_usuario, u.nome AS usuario, 
+#                l.titulo AS livro, e.data_retirada, e.data_devolucao, e.status
+#         FROM emprestimos e
+#         JOIN usuarios u ON e.id_usuario = u.id_usuario
+#         JOIN livros l ON e.id_livro = l.id_livro
+#         ORDER BY e.data_retirada DESC
+#     """)
+#     emprestimos = [dict(row) for row in cursor.fetchall()]
+#     return jsonify(emprestimos)
+
+# Modificar a rota /emprestimos para incluir id_usuario
 @app.route("/emprestimos", methods=["GET"])
 def get_emprestimos():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT e.id_emprestimo, u.nome AS usuario, l.titulo AS livro, e.data_retirada, e.status
+        SELECT e.id_emprestimo, e.id_usuario, u.nome AS usuario, 
+               l.titulo AS livro, e.data_retirada, e.data_devolucao, e.status
         FROM emprestimos e
         JOIN usuarios u ON e.id_usuario = u.id_usuario
         JOIN livros l ON e.id_livro = l.id_livro
+        ORDER BY e.data_retirada DESC
     """)
     emprestimos = [dict(row) for row in cursor.fetchall()]
     return jsonify(emprestimos)
@@ -178,44 +186,88 @@ def get_emprestimos():
 # --- Devolução de livro ---
 @app.route("/devolver/<int:id_emprestimo>", methods=["PUT"])
 def devolver_livro(id_emprestimo):
+    # Verificar se o usuário está logado
+    if "user_id" not in session:
+        return jsonify({"msg": "Não autorizado!"}), 401
+    
     conn = get_db()
     cursor = conn.cursor()
 
     # Busca o empréstimo
-    cursor.execute("SELECT id_usuario, id_livro, status FROM emprestimos WHERE id_emprestimo = ?", (id_emprestimo,))
+    cursor.execute("""
+        SELECT e.id_usuario, e.id_livro, e.status, u.tipo 
+        FROM emprestimos e
+        JOIN usuarios u ON e.id_usuario = u.id_usuario
+        WHERE e.id_emprestimo = ?
+    """, (id_emprestimo,))
     emprestimo = cursor.fetchone()
 
     if not emprestimo:
         return jsonify({"msg": "Empréstimo não encontrado!"}), 404
+    
     if emprestimo["status"] == "devolvido":
         return jsonify({"msg": "Livro já devolvido!"}), 400
+
+    # VERIFICAÇÃO DE SEGURANÇA: 
+    # Apenas professores OU o próprio usuário podem devolver
+    usuario_logado_id = session["user_id"]
+    usuario_logado_tipo = session["user_tipo"]
+    
+    if usuario_logado_tipo != "professor" and emprestimo["id_usuario"] != usuario_logado_id:
+        return jsonify({"msg": "Você não tem permissão para devolver este livro!"}), 403
 
     id_usuario = emprestimo["id_usuario"]
     id_livro = emprestimo["id_livro"]
 
     # Atualiza status do empréstimo
     cursor.execute("UPDATE emprestimos SET status='devolvido', data_devolucao=CURRENT_DATE WHERE id_emprestimo = ?", (id_emprestimo,))
+    
     # Atualiza livro como disponível
     cursor.execute("UPDATE livros SET disponivel=1 WHERE id_livro = ?", (id_livro,))
 
-    # Atualiza ranking (10 pontos por devolução)
-    cursor.execute("SELECT * FROM ranking WHERE id_usuario = ?", (id_usuario,))
-    rank = cursor.fetchone()
+    # Atualiza ranking (10 pontos por devolução) - apenas para alunos
+    if emprestimo["tipo"] == "aluno":
+        cursor.execute("SELECT * FROM ranking WHERE id_usuario = ?", (id_usuario,))
+        rank = cursor.fetchone()
 
-    if rank:
-        novos_pontos = rank["pontos"] + 10
-        novo_nivel = (novos_pontos // 50) + 1  # sobe nível a cada 50 pontos
-        cursor.execute("UPDATE ranking SET pontos=?, nivel=? WHERE id_usuario=?",
-                       (novos_pontos, novo_nivel, id_usuario))
-    else:
-        cursor.execute("INSERT INTO ranking (id_usuario, pontos, nivel) VALUES (?,?,?)",
-                       (id_usuario, 10, 1))
+        if rank:
+            novos_pontos = rank["pontos"] + 10
+            novo_nivel = (novos_pontos // 50) + 1  # sobe nível a cada 50 pontos
+            cursor.execute("UPDATE ranking SET pontos=?, nivel=? WHERE id_usuario=?",
+                           (novos_pontos, novo_nivel, id_usuario))
+        else:
+            cursor.execute("INSERT INTO ranking (id_usuario, pontos, nivel) VALUES (?,?,?)",
+                           (id_usuario, 10, 1))
 
     conn.commit()
     conn.close()
 
     return jsonify({"msg": "Livro devolvido e pontos atualizados com sucesso!"})
 
+# Corrigir a rota /meus_emprestimos_api
+@app.route("/meus_emprestimos_api", methods=["GET"])
+def get_meus_emprestimos():
+    if "user_id" not in session:
+        return jsonify({"msg": "Não autorizado!"}), 401
+    
+    usuario_id = session["user_id"]
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT e.id_emprestimo, e.id_usuario, u.nome AS usuario, 
+               l.titulo AS livro, e.data_retirada, e.data_devolucao, e.status
+        FROM emprestimos e
+        JOIN usuarios u ON e.id_usuario = u.id_usuario
+        JOIN livros l ON e.id_livro = l.id_livro
+        WHERE e.id_usuario = ?
+        ORDER BY e.data_retirada DESC
+    """, (usuario_id,))
+    
+    emprestimos = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return jsonify(emprestimos)
 
 # MOSTRA TOP 10
 @app.route("/ranking", methods=["GET"])
@@ -233,7 +285,6 @@ def get_ranking():
     ranking = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(ranking)
-
 
 @app.route("/estatisticas", methods=["GET"])
 def get_estatisticas():
@@ -265,44 +316,13 @@ def get_estatisticas():
         "total_pontos": total_pontos
     })
 
-def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
-
 # --- Páginas ---
-# @app.route("/")
-# def home():
-#     return redirect(url_for("login_page"))
-
 @app.route("/")
 def home():
     if "user_id" in session:
-        return redirect(url_for("dashboard_page"))  # Logado → Dashboard
+        return redirect(url_for("dashboard_page"))
     else:
-        return redirect(url_for("login_page"))      # Não logado → Login
-
-# @app.route("/login", methods=["GET", "POST"])
-# def login_page():
-#     if request.method == "POST":
-#         email = request.form.get("email")
-#         senha = request.form.get("senha")
-
-#         conn = get_db()
-#         c = conn.cursor()
-#         c.execute("SELECT * FROM usuarios WHERE email=? AND senha=?", (email, senha))
-#         user = c.fetchone()
-#         conn.close()
-
-#         if user:
-#             session["user_id"] = user["id_usuario"]
-#             session["user_nome"] = user["nome"]
-#             session["user_tipo"] = user["tipo"]
-#             return redirect(url_for("ranking_page"))
-#         else:
-#             return render_template("login.html", erro="Credenciais inválidas")
-
-#     return render_template("login.html")
+        return redirect(url_for("login_page"))
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
@@ -320,8 +340,7 @@ def login_page():
             session["user_id"] = user["id_usuario"]
             session["user_nome"] = user["nome"]
             session["user_tipo"] = user["tipo"]
-            # Alterar para redirecionar para a dashboard em vez do ranking
-            return redirect(url_for("dashboard_page"))  # ← MUDANÇA AQUI
+            return redirect(url_for("dashboard_page"))
         else:
             return render_template("login.html", erro="Credenciais inválidas")
 
@@ -339,13 +358,12 @@ def logout():
     return redirect(url_for("login_page"))
 
 @app.route("/livros/cadastrar")
-@requires_tipo("professor")   # só professores podem cadastrar
+@requires_tipo("professor")
 def cadastrar_livros_page():
     return render_template("livros_cadastrar.html")
 
-
 @app.route("/livros/listar", methods=["GET"])
-@requires_tipo("aluno", "professor")  # só ALUNO e PROFESSOR
+@requires_tipo("aluno", "professor")
 def listar_livros_page():
     if "user_id" not in session:
         return redirect(url_for("login_page"))
@@ -368,7 +386,7 @@ def usuario_sessao():
     })
 
 @app.route("/meus-emprestimos")
-@requires_tipo("aluno", "professor")  # alunos e professores podem acessar
+@requires_tipo("aluno", "professor")
 def meus_emprestimos_page():
     return render_template("meus_emprestimos.html")
 
@@ -380,7 +398,6 @@ def meu_ranking():
     conn = get_db()
     cursor = conn.cursor()
 
-    # Pega todos os usuários ordenados por pontos
     cursor.execute("""
         SELECT r.id_usuario, u.nome, r.pontos, r.nivel
         FROM ranking r
@@ -404,9 +421,8 @@ def meu_ranking():
     else:
         return jsonify({"msg": "Usuário não está no ranking"}), 404
 
-
 @app.route("/usuarios/cadastrar", methods=["GET", "POST"])
-@requires_tipo("professor")  # Apenas professores podem cadastrar novos usuários
+@requires_tipo("professor")
 def cadastrar_usuario_page():
     if request.method == "POST":
         nome = request.form.get("nome")
@@ -428,33 +444,27 @@ def cadastrar_usuario_page():
 
     return render_template("usuarios_cadastrar.html")
 
-# Adicione esta rota para a página de relatórios
 @app.route("/relatorios")
-@requires_tipo("professor")  # Apenas professores podem acessar
+@requires_tipo("professor")
 def relatorios_page():
     return render_template("relatorios.html")
 
-# Adicione esta API para fornecer os dados dos relatórios
 @app.route("/relatorios/emprestimos")
-@requires_tipo("professor")  # Apenas professores podem acessar
+@requires_tipo("professor")
 def relatorios_emprestimos():
     try:
-        # Obter parâmetros de data
         data_inicio = request.args.get('inicio')
         data_fim = request.args.get('fim')
         
-        # Validar parâmetros
         if not data_inicio or not data_fim:
             return jsonify({"error": "Parâmetros de data necessários"}), 400
         
-        # Converter para objetos datetime
         inicio = datetime.strptime(data_inicio, '%Y-%m-%d')
         fim = datetime.strptime(data_fim, '%Y-%m-%d')
         
         conn = get_db()
         cursor = conn.cursor()
         
-        # 1. Estatísticas básicas do período
         cursor.execute("""
             SELECT 
                 COUNT(*) as total_emprestimos,
@@ -469,10 +479,8 @@ def relatorios_emprestimos():
         devolvidos = stats['devolvidos'] if stats else 0
         alunos_ativos = stats['alunos_ativos'] if stats else 0
         
-        # Calcular taxa de devolução
         taxa_devolucao = round((devolvidos / total_emprestimos * 100), 2) if total_emprestimos > 0 else 0
         
-        # Calcular média de dias de empréstimo
         cursor.execute("""
             SELECT AVG(JULIANDAY(data_devolucao) - JULIANDAY(data_retirada)) as media_dias
             FROM emprestimos 
@@ -482,21 +490,16 @@ def relatorios_emprestimos():
         media_dias_result = cursor.fetchone()
         media_dias = round(media_dias_result['media_dias'], 1) if media_dias_result and media_dias_result['media_dias'] else 0
         
-        # 2. Dados para o gráfico (empréstimos por dia/semana/mês)
-        # Determinar agrupamento com base no período
         dias_diff = (fim - inicio).days
         
-        if dias_diff <= 31:  # Agrupar por dia
+        if dias_diff <= 31:
             group_format = "%Y-%m-%d"
-            label_format = "%d/%m"
             intervalo = "day"
-        elif dias_diff <= 90:  # Agrupar por semana
+        elif dias_diff <= 90:
             group_format = "%Y-%W"
-            label_format = "Semana %W"
             intervalo = "week"
-        else:  # Agrupar por mês
+        else:
             group_format = "%Y-%m"
-            label_format = "%m/%Y"
             intervalo = "month"
         
         cursor.execute(f"""
@@ -518,13 +521,12 @@ def relatorios_emprestimos():
                 label = datetime.strptime(row['periodo'], '%Y-%m-%d').strftime('%d/%m')
             elif intervalo == "week":
                 label = f"Semana {row['periodo'].split('-')[1]}"
-            else:  # month
+            else:
                 label = datetime.strptime(row['periodo'], '%Y-%m').strftime('%m/%Y')
                 
             labels.append(label)
             valores.append(row['total'])
         
-        # 3. Livros mais populares
         cursor.execute("""
             SELECT 
                 l.id_livro,
@@ -540,7 +542,6 @@ def relatorios_emprestimos():
         
         livros_populares = [dict(row) for row in cursor.fetchall()]
         
-        # 4. Top alunos
         cursor.execute("""
             SELECT 
                 u.id_usuario,
@@ -559,7 +560,6 @@ def relatorios_emprestimos():
         
         top_alunos = [dict(row) for row in cursor.fetchall()]
         
-        # 5. Todos os livros com estatísticas
         cursor.execute("""
             SELECT 
                 l.id_livro,
@@ -577,7 +577,6 @@ def relatorios_emprestimos():
         
         conn.close()
         
-        # Retornar todos os dados
         return jsonify({
             "total_emprestimos": total_emprestimos,
             "taxa_devolucao": taxa_devolucao,
