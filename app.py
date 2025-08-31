@@ -3,6 +3,8 @@ import sqlite3
 import os
 from functools import wraps
 from flask import abort
+from datetime import datetime, timedelta
+import json
 
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -425,6 +427,174 @@ def cadastrar_usuario_page():
         return render_template("usuarios_cadastrar.html", msg=msg)
 
     return render_template("usuarios_cadastrar.html")
+
+# Adicione esta rota para a página de relatórios
+@app.route("/relatorios")
+@requires_tipo("professor")  # Apenas professores podem acessar
+def relatorios_page():
+    return render_template("relatorios.html")
+
+# Adicione esta API para fornecer os dados dos relatórios
+@app.route("/relatorios/emprestimos")
+@requires_tipo("professor")  # Apenas professores podem acessar
+def relatorios_emprestimos():
+    try:
+        # Obter parâmetros de data
+        data_inicio = request.args.get('inicio')
+        data_fim = request.args.get('fim')
+        
+        # Validar parâmetros
+        if not data_inicio or not data_fim:
+            return jsonify({"error": "Parâmetros de data necessários"}), 400
+        
+        # Converter para objetos datetime
+        inicio = datetime.strptime(data_inicio, '%Y-%m-%d')
+        fim = datetime.strptime(data_fim, '%Y-%m-%d')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 1. Estatísticas básicas do período
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_emprestimos,
+                SUM(CASE WHEN status = 'devolvido' THEN 1 ELSE 0 END) as devolvidos,
+                COUNT(DISTINCT id_usuario) as alunos_ativos
+            FROM emprestimos 
+            WHERE data_retirada BETWEEN ? AND ?
+        """, (data_inicio, data_fim))
+        
+        stats = cursor.fetchone()
+        total_emprestimos = stats['total_emprestimos'] if stats else 0
+        devolvidos = stats['devolvidos'] if stats else 0
+        alunos_ativos = stats['alunos_ativos'] if stats else 0
+        
+        # Calcular taxa de devolução
+        taxa_devolucao = round((devolvidos / total_emprestimos * 100), 2) if total_emprestimos > 0 else 0
+        
+        # Calcular média de dias de empréstimo
+        cursor.execute("""
+            SELECT AVG(JULIANDAY(data_devolucao) - JULIANDAY(data_retirada)) as media_dias
+            FROM emprestimos 
+            WHERE status = 'devolvido' AND data_retirada BETWEEN ? AND ?
+        """, (data_inicio, data_fim))
+        
+        media_dias_result = cursor.fetchone()
+        media_dias = round(media_dias_result['media_dias'], 1) if media_dias_result and media_dias_result['media_dias'] else 0
+        
+        # 2. Dados para o gráfico (empréstimos por dia/semana/mês)
+        # Determinar agrupamento com base no período
+        dias_diff = (fim - inicio).days
+        
+        if dias_diff <= 31:  # Agrupar por dia
+            group_format = "%Y-%m-%d"
+            label_format = "%d/%m"
+            intervalo = "day"
+        elif dias_diff <= 90:  # Agrupar por semana
+            group_format = "%Y-%W"
+            label_format = "Semana %W"
+            intervalo = "week"
+        else:  # Agrupar por mês
+            group_format = "%Y-%m"
+            label_format = "%m/%Y"
+            intervalo = "month"
+        
+        cursor.execute(f"""
+            SELECT 
+                strftime('{group_format}', data_retirada) as periodo,
+                COUNT(*) as total
+            FROM emprestimos 
+            WHERE data_retirada BETWEEN ? AND ?
+            GROUP BY periodo
+            ORDER BY periodo
+        """, (data_inicio, data_fim))
+        
+        grafico_data = cursor.fetchall()
+        labels = []
+        valores = []
+        
+        for row in grafico_data:
+            if intervalo == "day":
+                label = datetime.strptime(row['periodo'], '%Y-%m-%d').strftime('%d/%m')
+            elif intervalo == "week":
+                label = f"Semana {row['periodo'].split('-')[1]}"
+            else:  # month
+                label = datetime.strptime(row['periodo'], '%Y-%m').strftime('%m/%Y')
+                
+            labels.append(label)
+            valores.append(row['total'])
+        
+        # 3. Livros mais populares
+        cursor.execute("""
+            SELECT 
+                l.id_livro,
+                l.titulo,
+                l.autor,
+                COUNT(e.id_emprestimo) as total_emprestimos
+            FROM livros l
+            LEFT JOIN emprestimos e ON l.id_livro = e.id_livro AND e.data_retirada BETWEEN ? AND ?
+            GROUP BY l.id_livro
+            ORDER BY total_emprestimos DESC
+            LIMIT 10
+        """, (data_inicio, data_fim))
+        
+        livros_populares = [dict(row) for row in cursor.fetchall()]
+        
+        # 4. Top alunos
+        cursor.execute("""
+            SELECT 
+                u.id_usuario,
+                u.nome,
+                COUNT(e.id_emprestimo) as total_emprestimos,
+                COALESCE(r.pontos, 0) as pontos,
+                COALESCE(r.nivel, 1) as nivel
+            FROM usuarios u
+            LEFT JOIN emprestimos e ON u.id_usuario = e.id_usuario AND e.data_retirada BETWEEN ? AND ?
+            LEFT JOIN ranking r ON u.id_usuario = r.id_usuario
+            WHERE u.tipo = 'aluno'
+            GROUP BY u.id_usuario
+            ORDER BY total_emprestimos DESC
+            LIMIT 10
+        """, (data_inicio, data_fim))
+        
+        top_alunos = [dict(row) for row in cursor.fetchall()]
+        
+        # 5. Todos os livros com estatísticas
+        cursor.execute("""
+            SELECT 
+                l.id_livro,
+                l.titulo,
+                l.autor,
+                l.disponivel,
+                COUNT(e.id_emprestimo) as total_emprestimos
+            FROM livros l
+            LEFT JOIN emprestimos e ON l.id_livro = e.id_livro
+            GROUP BY l.id_livro
+            ORDER BY l.titulo
+        """)
+        
+        todos_livros = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        # Retornar todos os dados
+        return jsonify({
+            "total_emprestimos": total_emprestimos,
+            "taxa_devolucao": taxa_devolucao,
+            "alunos_ativos": alunos_ativos,
+            "media_dias_emprestimo": media_dias,
+            "grafico_emprestimos": {
+                "labels": labels,
+                "valores": valores
+            },
+            "livros_populares": livros_populares,
+            "top_alunos": top_alunos,
+            "todos_livros": todos_livros
+        })
+        
+    except Exception as e:
+        print(f"Erro ao gerar relatórios: {str(e)}")
+        return jsonify({"error": "Erro interno ao gerar relatórios"}), 500
 
 # --- Inicialização do banco ---
 if __name__ == "__main__":

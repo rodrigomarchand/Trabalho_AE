@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>📈 Relatórios e Estatísticas</h4>
+    <div>
+        <button class="btn btn-outline-secondary" onclick="window.print()">
+            <i class="bi bi-printer"></i> Imprimir
+        </button>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="card shadow mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Filtros</h5>
+        <form id="filtroForm" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Período</label>
+                <select id="periodo" class="form-select">
+                    <option value="7">Últimos 7 dias</option>
+                    <option value="30" selected>Últimos 30 dias</option>
+                    <option value="90">Últimos 3 meses</option>
+                    <option value="180">Últimos 6 meses</option>
+                    <option value="365">Último ano</option>
+                    <option value="custom">Personalizado</option>
+                </select>
+            </div>
+            <div class="col-md-3" id="customRange" style="display: none;">
+                <label class="form-label">Data Início</label>
+                <input type="date" id="dataInicio" class="form-control">
+            </div>
+            <div class="col-md-3" id="customRangeEnd" style="display: none;">
+                <label class="form-label">Data Fim</label>
+                <input type="date" id="dataFim" class="form-control">
+            </div>
+            <div class="col-md-3 align-self-end">
+                <button type="submit" class="btn btn-primary">Aplicar Filtros</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Cards de Estatísticas -->
+<div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-primary text-white text-center shadow">
+            <div class="card-body">
+                <h6 class="card-title">Empréstimos no Período</h6>
+                <h3 id="stats-emprestimos-periodo" class="card-text">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-success text-white text-center shadow">
+            <div class="card-body">
+                <h6 class="card-title">Taxa de Devolução</h6>
+                <h3 id="stats-taxa-devolucao" class="card-text">0%</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-info text-white text-center shadow">
+            <div class="card-body">
+                <h6 class="card-title">Alunos Ativos</h6>
+                <h3 id="stats-alunos-ativos" class="card-text">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card bg-warning text-dark text-center shadow">
+            <div class="card-body">
+                <h6 class="card-title">Dias Médio Empréstimo</h6>
+                <h3 id="stats-media-dias" class="card-text">0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Gráfico de Empréstimos por Período -->
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">📊 Empréstimos por Período</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="emprestimosChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Livros Mais Populares -->
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">🔥 Livros Mais Populares</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="livrosPopulares">
+                    <div class="list-group-item text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Carregando...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Estatísticas Detalhadas -->
+    <div class="col-12 mb-4">
+        <div class="card shadow">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">📋 Estatísticas Detalhadas</h5>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-secondary active" data-tab="alunos">Top Alunos</button>
+                    <button class="btn btn-sm btn-outline-secondary" data-tab="livros">Todos os Livros</button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <!-- Tabela de Top Alunos -->
+                <div class="table-responsive" id="tab-alunos">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Posição</th>
+                                <th>Aluno</th>
+                                <th>Empréstimos</th>
+                                <th>Pontos</th>
+                                <th>Nível</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-top-alunos"></tbody>
+                    </table>
+                </div>
+
+                <!-- Tabela de Todos os Livros -->
+                <div class="table-responsive" id="tab-livros" style="display: none;">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Livro</th>
+                                <th>Autor</th>
+                                <th>Empréstimos</th>
+                                <th>Disponibilidade</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-todos-livros"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Biblioteca Chart.js para gráficos -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    .card {
+        border: none;
+        border-radius: 10px;
+    }
+
+    .stats-card {
+        transition: transform 0.2s;
+    }
+
+    .stats-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .list-group-item {
+        border-left: none;
+        border-right: none;
+    }
+
+    .list-group-item:first-child {
+        border-top: none;
+    }
+
+    .list-group-item:last-child {
+        border-bottom: none;
+    }
+</style>
+
+<script>
+    let emprestimosChart; // Variável global para o gráfico
+
+    // Mostrar/ocultar campos de data personalizada
+    document.getElementById('periodo').addEventListener('change', function () {
+        const isCustom = this.value === 'custom';
+        document.getElementById('customRange').style.display = isCustom ? 'block' : 'none';
+        document.getElementById('customRangeEnd').style.display = isCustom ? 'block' : 'none';
+    });
+
+    // Alternar entre abas
+    document.querySelectorAll('[data-tab]').forEach(button => {
+        button.addEventListener('click', function () {
+            const tabName = this.getAttribute('data-tab');
+
+            // Ativar botão
+            document.querySelectorAll('[data-tab]').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            this.classList.add('active');
+
+            // Mostrar aba correspondente
+            document.getElementById('tab-alunos').style.display = tabName === 'alunos' ? 'block' : 'none';
+            document.getElementById('tab-livros').style.display = tabName === 'livros' ? 'block' : 'none';
+        });
+    });
+
+    // Carregar todos os dados
+    async function carregarRelatorios() {
+        const periodo = document.getElementById('periodo').value;
+        let dataInicio, dataFim;
+
+        if (periodo === 'custom') {
+            dataInicio = document.getElementById('dataInicio').value;
+            dataFim = document.getElementById('dataFim').value;
+
+            if (!dataInicio || !dataFim) {
+                alert('Por favor, selecione ambas as datas para o período personalizado.');
+                return;
+            }
+        } else {
+            // Calcular datas com base no período selecionado
+            const hoje = new Date();
+            dataFim = hoje.toISOString().split('T')[0];
+
+            const inicio = new Date();
+            inicio.setDate(hoje.getDate() - parseInt(periodo));
+            dataInicio = inicio.toISOString().split('T')[0];
+        }
+
+        try {
+            // Carregar dados do período
+            const response = await fetch(`/relatorios/emprestimos?inicio=${dataInicio}&fim=${dataFim}`);
+            const data = await response.json();
+
+            // Atualizar cards de estatísticas
+            document.getElementById('stats-emprestimos-periodo').textContent = data.total_emprestimos || 0;
+            document.getElementById('stats-taxa-devolucao').textContent = data.taxa_devolucao ? `${data.taxa_devolucao}%` : '0%';
+            document.getElementById('stats-alunos-ativos').textContent = data.alunos_ativos || 0;
+            document.getElementById('stats-media-dias').textContent = data.media_dias_emprestimo || 0;
+
+            // Atualizar gráfico
+            atualizarGrafico(data.grafico_emprestimos);
+
+            // Atualizar livros populares
+            atualizarLivrosPopulares(data.livros_populares);
+
+            // Atualizar tabelas
+            atualizarTabelaTopAlunos(data.top_alunos);
+            atualizarTabelaLivros(data.todos_livros);
+
+        } catch (error) {
+            console.error('Erro ao carregar relatórios:', error);
+            alert('Erro ao carregar dados. Verifique o console para mais detalhes.');
+        }
+    }
+
+    // Atualizar gráfico de empréstimos
+    function atualizarGrafico(dados) {
+        const ctx = document.getElementById('emprestimosChart').getContext('2d');
+
+        // Destruir gráfico anterior se existir
+        if (emprestimosChart) {
+            emprestimosChart.destroy();
+        }
+
+        // Criar novo gráfico
+        emprestimosChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: dados.labels || [],
+                datasets: [{
+                    label: 'Empréstimos',
+                    data: dados.valores || [],
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Atualizar lista de livros populares
+    function atualizarLivrosPopulares(livros) {
+        const container = document.getElementById('livrosPopulares');
+        container.innerHTML = '';
+
+        if (!livros || livros.length === 0) {
+            container.innerHTML = '<div class="list-group-item text-center">Nenhum dado disponível</div>';
+            return;
+        }
+
+        livros.slice(0, 5).forEach((livro, index) => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item';
+            item.innerHTML = `
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="me-3">
+                        <span class="fw-bold">${index + 1}.</span> 
+                        <span class="livro-titulo">${livro.titulo}</span>
+                        <br>
+                        <small class="text-muted">${livro.autor}</small>
+                    </div>
+                    <div class="text-nowrap">
+                        <span class="badge bg-primary rounded-pill">${livro.total_emprestimos} empréstimos</span>
+                    </div>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    // Atualizar tabela de top alunos
+    function atualizarTabelaTopAlunos(alunos) {
+        const tbody = document.getElementById('tbody-top-alunos');
+        tbody.innerHTML = '';
+
+        if (!alunos || alunos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum dado disponível</td></tr>';
+            return;
+        }
+
+        alunos.forEach((aluno, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${aluno.nome}</td>
+                <td>${aluno.total_emprestimos}</td>
+                <td>${aluno.pontos}</td>
+                <td>${aluno.nivel}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    // Atualizar tabela de todos os livros
+    function atualizarTabelaLivros(livros) {
+        const tbody = document.getElementById('tbody-todos-livros');
+        tbody.innerHTML = '';
+
+        if (!livros || livros.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum dado disponível</td></tr>';
+            return;
+        }
+
+        livros.forEach(livro => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${livro.titulo}</td>
+                <td>${livro.autor}</td>
+                <td>${livro.total_emprestimos}</td>
+                <td>${livro.disponivel ? '<span class="badge bg-success">Disponível</span>' : '<span class="badge bg-danger">Indisponível</span>'}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    // Event listener para o formulário de filtros
+    document.getElementById('filtroForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        carregarRelatorios();
+    });
+
+    // Carregar dados iniciais ao abrir a página
+    document.addEventListener('DOMContentLoaded', function () {
+        // Definir data fim como hoje e data início como 30 dias atrás
+        const hoje = new Date();
+        const trintaDiasAtras = new Date();
+        trintaDiasAtras.setDate(hoje.getDate() - 30);
+
+        document.getElementById('dataFim').value = hoje.toISOString().split('T')[0];
+        document.getElementById('dataInicio').value = trintaDiasAtras.toISOString().split('T')[0];
+
+        // Carregar dados iniciais
+        carregarRelatorios();
+    });
+</script>
+
+<!-- Adicionar ícones do Bootstrap -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+
+{% endblock %}
