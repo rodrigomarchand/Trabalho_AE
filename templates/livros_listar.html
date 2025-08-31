@@ -1,69 +1,246 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4>Acervo de Livros</h4>
-    <a class="btn btn-primary" href="/livros/cadastrar">+ Cadastrar</a>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>📚 Acervo de Livros</h4>
+    {% if session.get('user_tipo') == 'professor' %}
+    <a class="btn btn-primary" href="/livros/cadastrar">
+        <i class="bi bi-plus-circle"></i> Cadastrar Livro
+    </a>
+    {% endif %}
 </div>
 
 <div id="msg"></div>
 
-<div class="table-responsive">
-    <table class="table table-striped align-middle" id="tblLivros">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Título</th>
-                <th>Autor</th>
-                <th>Ano</th>
-                <th>Disponível</th>
-                <th>Ações</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+<div class="card shadow">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="tblLivros">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Título</th>
+                        <th>Autor</th>
+                        <th>Ano</th>
+                        <th>Disponível</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de confirmação de empréstimo -->
+<div class="modal fade" id="modalEmprestimo" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar Empréstimo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Tem certeza que deseja emprestar este livro?</p>
+                <p><strong>Livro:</strong> <span id="modalLivroTitulo"></span></p>
+                <p><strong>Autor:</strong> <span id="modalLivroAutor"></span></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="btnConfirmarEmprestimo">Confirmar Empréstimo</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
+    let livroParaEmprestar = null;
+    let livroTitulo = '';
+    let livroAutor = '';
+
     async function carregarLivros() {
-        const resp = await fetch("/livros");
-        const livros = await resp.json();
-        const tbody = document.querySelector("#tblLivros tbody");
-        tbody.innerHTML = "";
-        livros.forEach(l => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-      <td>${l.id_livro}</td>
-      <td>${l.titulo}</td>
-      <td>${l.autor}</td>
-      <td>${l.ano ?? ""}</td>
-      <td>${l.disponivel === 1 ? "Sim" : "Não"}</td>
-      <td>
-        <button class="btn btn-sm btn-success" ${l.disponivel === 0 ? "disabled" : ""} onclick="emprestar(${l.id_livro})">Emprestar</button>
-      </td>
-    `;
-            tbody.appendChild(tr);
-        });
-    }
+        try {
+            showLoading(true);
+            const resp = await fetch("/livros");
 
-    async function emprestar(id_livro) {
-        // Para MVP: empresta com o usuário logado (session no back)
-        // Precisamos do id do usuário logado -> criar um endpoint para retornar sessão
-        const u = await (await fetch("/usuarios_sessao")).json();
-        if (!u || !u.id_usuario) {
-            document.getElementById("msg").innerHTML = `<div class="alert alert-warning">Faça login novamente.</div>`;
-            return;
+            if (!resp.ok) {
+                throw new Error('Erro ao carregar livros');
+            }
+
+            const livros = await resp.json();
+            const tbody = document.querySelector("#tblLivros tbody");
+            tbody.innerHTML = "";
+
+            if (livros.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <div class="text-muted">
+                                <i class="bi bi-book" style="font-size: 2rem;"></i>
+                                <p class="mt-2">Nenhum livro cadastrado</p>
+                                {% if session.get('user_tipo') == 'professor' %}
+                                <a href="/livros/cadastrar" class="btn btn-primary mt-2">
+                                    <i class="bi bi-plus-circle"></i> Cadastrar Primeiro Livro
+                                </a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            livros.forEach(l => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${l.id_livro}</td>
+                    <td class="fw-semibold">${l.titulo}</td>
+                    <td>${l.autor}</td>
+                    <td>${l.ano || '-'}</td>
+                    <td>
+                        <span class="badge ${l.disponivel === 1 ? 'bg-success' : 'bg-danger'}">
+                            ${l.disponivel === 1 ? 'Disponível' : 'Indisponível'}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-success" 
+                            ${l.disponivel === 0 ? 'disabled' : ''} 
+                            onclick="prepararEmprestimo(${l.id_livro}, '${l.titulo.replace(/'/g, "\\'")}', '${l.autor.replace(/'/g, "\\'")}')">
+                            <i class="bi bi-cart-check"></i> Emprestar
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+        } catch (error) {
+            console.error("Erro ao carregar livros:", error);
+            document.getElementById("msg").innerHTML = `
+                <div class="alert alert-danger alert-dismissible fade show">
+                    <i class="bi bi-exclamation-triangle"></i> Erro ao carregar livros. Tente novamente.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        } finally {
+            showLoading(false);
         }
-
-        const resp = await fetch("/emprestimos", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id_usuario: u.id_usuario, id_livro })
-        });
-        const data = await resp.json();
-        document.getElementById("msg").innerHTML = `<div class="alert alert-${resp.ok ? "success" : "danger"}">${data.msg || "Erro"}</div>`;
-        carregarLivros();
     }
 
-    carregarLivros();
+    function prepararEmprestimo(id_livro, titulo, autor) {
+        livroParaEmprestar = id_livro;
+        livroTitulo = titulo;
+        livroAutor = autor;
+
+        document.getElementById('modalLivroTitulo').textContent = titulo;
+        document.getElementById('modalLivroAutor').textContent = autor;
+
+        const modal = new bootstrap.Modal(document.getElementById('modalEmprestimo'));
+        modal.show();
+    }
+
+    document.getElementById('btnConfirmarEmprestimo').addEventListener('click', async function () {
+        if (!livroParaEmprestar) return;
+
+        try {
+            // Mostrar loading no botão
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processando...';
+            btn.disabled = true;
+
+            const u = await (await fetch("/usuarios_sessao")).json();
+            if (!u || !u.id_usuario) {
+                throw new Error("Faça login novamente");
+            }
+
+            const resp = await fetch("/emprestimos", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id_usuario: u.id_usuario,
+                    id_livro: livroParaEmprestar
+                })
+            });
+
+            const data = await resp.json();
+
+            if (resp.ok) {
+                document.getElementById("msg").innerHTML = `
+                    <div class="alert alert-success alert-dismissible fade show">
+                        <i class="bi bi-check-circle"></i> ${data.msg}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
+
+                // Fechar modal
+                bootstrap.Modal.getInstance(document.getElementById('modalEmprestimo')).hide();
+
+                // Recarregar lista de livros
+                await carregarLivros();
+
+            } else {
+                throw new Error(data.msg || "Erro ao realizar empréstimo");
+            }
+
+        } catch (error) {
+            document.getElementById("msg").innerHTML = `
+                <div class="alert alert-danger alert-dismissible fade show">
+                    <i class="bi bi-exclamation-triangle"></i> ${error.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        } finally {
+            // Restaurar botão
+            const btn = document.getElementById('btnConfirmarEmprestimo');
+            btn.innerHTML = 'Confirmar Empréstimo';
+            btn.disabled = false;
+        }
+    });
+
+    function showLoading(show) {
+        const tbody = document.querySelector("#tblLivros tbody");
+        if (show) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Carregando...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Carregando livros...</p>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    // Carregar livros quando a página for carregada
+    document.addEventListener('DOMContentLoaded', carregarLivros);
+
+    // Atualizar automaticamente a cada 30 segundos
+    setInterval(carregarLivros, 30000);
 </script>
+
+<style>
+    .table-hover tbody tr:hover {
+        background-color: rgba(13, 110, 253, 0.05);
+    }
+
+    .badge {
+        font-size: 0.8em;
+        padding: 0.4em 0.6em;
+    }
+
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .card {
+        border: none;
+        border-radius: 12px;
+    }
+</style>
+
+<!-- Adicionar ícones do Bootstrap -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+
 {% endblock %}

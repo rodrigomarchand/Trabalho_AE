@@ -1,28 +1,151 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-12 col-md-4">
-        <div class="card shadow">
-            <div class="card-body">
-                <h4 class="mb-3 text-center">Entrar no AppLê</h4>
+    <div class="col-12 col-md-6 col-lg-5">
+        <div class="card shadow-lg">
+            <div class="card-body p-5">
+                <!-- Header -->
+                <div class="text-center mb-4">
+                    <div class="bg-primary bg-gradient rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
+                        style="width: 80px; height: 80px;">
+                        <i class="bi bi-book text-white" style="font-size: 2rem;"></i>
+                    </div>
+                    <h3 class="fw-bold text-primary">AppLê</h3>
+                    <p class="text-muted">Sistema de Gestão de Bibliotecas</p>
+                </div>
+
+                <!-- Mensagens de Erro -->
                 {% if erro %}
-                <div class="alert alert-danger">{{ erro }}</div>
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    {{ erro }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
                 {% endif %}
-                <form method="POST" action="/login">
-                    <div class="mb-3">
-                        <label class="form-label">E-mail</label>
-                        <input type="email" name="email" class="form-control" required placeholder="seu@email">
+
+                <!-- Formulário de Login -->
+                <form method="POST" action="/login" id="loginForm">
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-envelope me-2"></i>E-mail
+                        </label>
+                        <input type="email" name="email" class="form-control form-control-lg" required
+                            placeholder="seu@email.com" autocomplete="email">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Senha</label>
-                        <input type="password" name="senha" class="form-control" required placeholder="•••••">
+
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-lock me-2"></i>Senha
+                        </label>
+                        <input type="password" name="senha" class="form-control form-control-lg" required
+                            placeholder="Digite sua senha" autocomplete="current-password">
                     </div>
-                    <button class="btn btn-primary w-100">Entrar</button>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100 py-3 fw-semibold">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>
+                        Entrar no Sistema
+                    </button>
                 </form>
-                <hr>
-                <small class="text-muted">Dica: use um aluno populado (ex.: ana@email.com / 123)</small>
+
+                <hr class="my-4">
+
+                <!-- Dicas de Login -->
+                <div class="text-center">
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Dica de acesso para teste:
+                    </small>
+                    <div class="mt-2 p-3 bg-light rounded">
+                        <small class="text-dark">
+                            <strong>Aluno:</strong> ana@email.com / 123<br>
+                            <strong>Professor:</strong> prof@email.com / 123
+                        </small>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const form = document.getElementById('loginForm');
+        const submitBtn = form.querySelector('button[type="submit"]');
+
+        form.addEventListener('submit', function (e) {
+            // Mostrar loading no botão
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Entrando...';
+            submitBtn.disabled = true;
+
+            // Reativar o botão se houver erro (timeout de segurança)
+            setTimeout(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }, 3000);
+        });
+
+        // Focar no campo de email ao carregar a página
+        document.querySelector('input[name="email"]').focus();
+    });
+</script>
+
+<style>
+    .card {
+        border: none;
+        border-radius: 16px;
+    }
+
+    .bg-gradient {
+        background: linear-gradient(135deg, #0d6efd, #0a58ca) !important;
+    }
+
+    .form-control {
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        transition: all 0.3s ease;
+    }
+
+    .form-control:focus {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        transform: translateY(-1px);
+    }
+
+    .form-control-lg {
+        font-size: 1.1rem;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #0d6efd, #0a58ca);
+        border: none;
+        border-radius: 10px;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #0a58ca, #084298);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
+    }
+
+    .btn-primary:active {
+        transform: translateY(0);
+    }
+
+    .alert {
+        border-radius: 10px;
+        border: none;
+    }
+
+    .bg-light {
+        background-color: #f8f9fa !important;
+        border-radius: 10px;
+    }
+</style>
+
+<!-- Adicionar ícones do Bootstrap -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+
 {% endblock %}
