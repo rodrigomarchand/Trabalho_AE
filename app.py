@@ -214,19 +214,6 @@ def devolver_livro(id_emprestimo):
 
     return jsonify({"msg": "Livro devolvido e pontos atualizados com sucesso!"})
 
-# MOSTRA TODOS 
-# @app.route("/ranking", methods=["GET"])
-# def get_ranking():
-#     conn = get_db()
-#     cursor = conn.cursor()
-#     cursor.execute("""
-#         SELECT r.id_usuario, u.nome, r.pontos, r.nivel
-#         FROM ranking r
-#         JOIN usuarios u ON r.id_usuario = u.id_usuario
-#         ORDER BY r.pontos DESC
-#     """)
-#     ranking = [dict(row) for row in cursor.fetchall()]
-#     return jsonify(ranking)
 
 # MOSTRA TOP 10
 @app.route("/ranking", methods=["GET"])
@@ -234,15 +221,17 @@ def get_ranking():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT r.id_usuario, u.nome, r.pontos, r.nivel
+        SELECT r.id_usuario, u.nome AS nome, r.pontos, r.nivel
         FROM ranking r
         JOIN usuarios u ON r.id_usuario = u.id_usuario
+        WHERE u.tipo = 'aluno'
         ORDER BY r.pontos DESC
         LIMIT 10
     """)
     ranking = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(ranking)
+
 
 @app.route("/estatisticas", methods=["GET"])
 def get_estatisticas():
@@ -280,9 +269,38 @@ def get_db():
     return conn
 
 # --- Páginas ---
+# @app.route("/")
+# def home():
+#     return redirect(url_for("login_page"))
+
 @app.route("/")
 def home():
-    return redirect(url_for("login_page"))
+    if "user_id" in session:
+        return redirect(url_for("dashboard_page"))  # Logado → Dashboard
+    else:
+        return redirect(url_for("login_page"))      # Não logado → Login
+
+# @app.route("/login", methods=["GET", "POST"])
+# def login_page():
+#     if request.method == "POST":
+#         email = request.form.get("email")
+#         senha = request.form.get("senha")
+
+#         conn = get_db()
+#         c = conn.cursor()
+#         c.execute("SELECT * FROM usuarios WHERE email=? AND senha=?", (email, senha))
+#         user = c.fetchone()
+#         conn.close()
+
+#         if user:
+#             session["user_id"] = user["id_usuario"]
+#             session["user_nome"] = user["nome"]
+#             session["user_tipo"] = user["tipo"]
+#             return redirect(url_for("ranking_page"))
+#         else:
+#             return render_template("login.html", erro="Credenciais inválidas")
+
+#     return render_template("login.html")
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
@@ -300,23 +318,23 @@ def login_page():
             session["user_id"] = user["id_usuario"]
             session["user_nome"] = user["nome"]
             session["user_tipo"] = user["tipo"]
-            return redirect(url_for("ranking_page"))
+            # Alterar para redirecionar para a dashboard em vez do ranking
+            return redirect(url_for("dashboard_page"))  # ← MUDANÇA AQUI
         else:
             return render_template("login.html", erro="Credenciais inválidas")
 
     return render_template("login.html")
 
+@app.route("/dashboard")
+def dashboard_page():
+    if "user_id" not in session:
+        return redirect(url_for("login_page"))
+    return render_template("dashboard.html")
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login_page"))
-
-# @app.route("/livros/cadastrar", methods=["GET"])
-# def cadastrar_livros_page():
-#     # opcional: exigir login
-#     if "user_id" not in session:
-#         return redirect(url_for("login_page"))
-#     return render_template("livros_cadastrar.html")
 
 @app.route("/livros/cadastrar")
 @requires_tipo("professor")   # só professores podem cadastrar
@@ -346,25 +364,6 @@ def usuario_sessao():
         "nome": session["user_nome"],
         "tipo": session["user_tipo"]
     })
-
-# @app.route("/usuarios_sessao") ESTÁ BUGADO POR CAUSA DO TIPO DE USUÁRIO
-# def usuario_sessao():
-#     if "user_id" not in session:
-#         return jsonify({})
-    
-#     tipo_maiusculo = session["user_tipo"].upper()  # 'aluno' -> 'ALUNO'
-    
-#     return jsonify({
-#         "id_usuario": session["user_id"],
-#         "nome": f"{session['user_nome']} ({tipo_maiusculo})",
-#         "tipo": session["user_tipo"]
-#     })
-
-# @app.route("/meus-emprestimos")
-# def meus_emprestimos_page():
-#     if "user_id" not in session:
-#         return redirect(url_for("login_page"))
-#     return render_template("meus_emprestimos.html")
 
 @app.route("/meus-emprestimos")
 @requires_tipo("aluno", "professor")  # alunos e professores podem acessar
@@ -403,27 +402,6 @@ def meu_ranking():
     else:
         return jsonify({"msg": "Usuário não está no ranking"}), 404
 
-# @app.route("/usuarios/cadastrar", methods=["GET", "POST"])
-# def cadastrar_usuario_page():
-#     if request.method == "POST":
-#         nome = request.form.get("nome")
-#         email = request.form.get("email")
-#         senha = request.form.get("senha")
-#         tipo = request.form.get("tipo")
-
-#         conn = get_db()
-#         cursor = conn.cursor()
-#         try:
-#             cursor.execute("INSERT INTO usuarios (nome,email,senha,tipo) VALUES (?,?,?,?)",
-#                            (nome, email, senha, tipo))
-#             conn.commit()
-#             msg = "Usuário cadastrado com sucesso!"
-#         except Exception as e:
-#             msg = f"Erro: {str(e)}"
-#         conn.close()
-#         return render_template("usuarios_cadastrar.html", msg=msg)
-
-#     return render_template("usuarios_cadastrar.html")
 
 @app.route("/usuarios/cadastrar", methods=["GET", "POST"])
 @requires_tipo("professor")  # Apenas professores podem cadastrar novos usuários
@@ -448,12 +426,7 @@ def cadastrar_usuario_page():
 
     return render_template("usuarios_cadastrar.html")
 
-
-
-
 # --- Inicialização do banco ---
 if __name__ == "__main__":
     init_db()
     app.run(debug=True)
-
-
